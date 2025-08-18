@@ -1,34 +1,73 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>Special Video</title>
-
-  <!-- Twitter Player Card setup -->
-  <meta name="twitter:card" content="player" />
-  <meta name="twitter:title" content="Watch This Video Now" />
-  <meta name="twitter:description" content="Special offer below the video – play now!" />
-  <meta name="twitter:image" content="https://www.w3schools.com/html/img_girl.jpg" />
-
-  <!-- Player info -->
-  <meta name="twitter:player" content="https://YOURDOMAIN.com/player.html" />
-  <meta name="twitter:player:width" content="640" />
-  <meta name="twitter:player:height" content="360" />
-</head>
-<body>
-  <h2 style="text-align:center;color:#fff;background:#000;padding:8px;">Special Video</h2>
-  <video controls autoplay style="max-width:100%;border-radius:12px;">
-    <source src="https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4" type="video/mp4">
-    Your browser does not support video.
-  </video>
-
-  <!-- Ad link directly under -->
-  <div style="text-align:center;margin-top:12px;">
-    <a href="https://www.profitableratecpm.com/v30v9iyyx?key=d7ca0b45aee9f9b8402f8dce202ab1ff"
-       target="_blank"
-       style="background:#ff6600;color:#fff;padding:10px 16px;border-radius:8px;font-weight:bold;text-decoration:none;">
-       🔗 Special Offer – Click Here
-    </a>
+<!-- === Video + Ad (one-click = play video + open ad) === -->
+<div id="vx-wrap" style="max-width:700px;margin:16px auto;font-family:Arial,Helvetica,sans-serif;">
+  <!-- Video -->
+  <div style="position:relative;border-radius:12px;overflow:hidden;background:#000;cursor:pointer;">
+    <video id="vx-video"
+           playsinline
+           controls
+           muted
+           preload="metadata"
+           style="width:100%;display:block;background:#000;">
+      <!-- TEMP test video. Replace with your DIRECT .mp4 URL from Blogger -->
+    <source src="https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4" type="video/mp4">
+    </video>
   </div>
-</body>
-</html>
+  
+  <!-- Inline ad area (shows immediately on first click/play) -->
+  <div id="vx-adslot" style="display:none;margin-top:10px;border:1px solid #e3e3e3;border-radius:12px;overflow:hidden;">
+    <div style="padding:10px;background:#111;color:#fff;font-weight:600;">Sponsored • continues below</div>
+    <iframe id="vx-adframe" src="" loading="lazy"
+            style="width:100%;height:420px;border:0;display:block;background:#fff;"></iframe>
+    <div style="padding:8px 10px;background:#f7f7f7;font-size:12px;color:#666;text-align:center;">
+      If the offer doesn’t appear, <a id="vx-fallback" href="#" target="_blank" rel="nofollow sponsored noopener">open in a new tab</a>.
+    </div>
+  </div>
+
+  <p style="text-align:center;font-size:12px;color:#888;margin-top:8px;">
+    Disclosure: Playing the video also loads a sponsored offer on this page.
+  </p>
+</div>
+
+<script>
+(function(){
+  // --- CONFIG ---
+  const AD_URL = "https://www.profitableratecpm.com/v30v9iyyx?key=d7ca0b45aee9f9b8402f8dce202ab1ff";
+  const ALSO_OPEN_NEW_TAB = true; // set to false if you only want the inline ad below the video
+
+  // --- ELEMENTS ---
+  const v   = document.getElementById('vx-video');
+  const ad  = document.getElementById('vx-adslot');
+  const fra = document.getElementById('vx-adframe');
+  const fb  = document.getElementById('vx-fallback');
+
+  let fired = false;
+  function startCombo(){
+    if (fired) return;
+    fired = true;
+
+    // Play video
+    try { v.play().catch(()=>{}); } catch(_){}
+
+    // Show inline ad frame
+    ad.style.display = 'block';
+    fra.src = AD_URL;
+
+    // Also open offer in a new tab (helps if the offer blocks iframes)
+    if (ALSO_OPEN_NEW_TAB) {
+      const w = window.open(AD_URL, '_blank', 'noopener');
+      // if popup blocked, user can click the fallback link
+    }
+  }
+
+  // Trigger when user clicks the video surface or hits play
+  v.addEventListener('click', startCombo, {passive:true});
+  v.addEventListener('play',  startCombo, {once:true});
+
+  // Fallback open
+  fb.addEventListener('click', function(e){
+    e.preventDefault();
+    const w = window.open(AD_URL, '_blank', 'noopener');
+    if (!w) location.href = AD_URL;
+  });
+})();
+</script>
