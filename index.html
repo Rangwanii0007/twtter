@@ -1,73 +1,896 @@
-<!-- === Video + Ad (one-click = play video + open ad) === -->
-<div id="vx-wrap" style="max-width:700px;margin:16px auto;font-family:Arial,Helvetica,sans-serif;">
-  <!-- Video -->
-  <div style="position:relative;border-radius:12px;overflow:hidden;background:#000;cursor:pointer;">
-    <video id="vx-video"
-           playsinline
-           controls
-           muted
-           preload="metadata"
-           style="width:100%;display:block;background:#000;">
-      <!-- TEMP test video. Replace with your DIRECT .mp4 URL from Blogger -->
-    <source src="https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4" type="video/mp4">
-    </video>
-  </div>
-  
-  <!-- Inline ad area (shows immediately on first click/play) -->
-  <div id="vx-adslot" style="display:none;margin-top:10px;border:1px solid #e3e3e3;border-radius:12px;overflow:hidden;">
-    <div style="padding:10px;background:#111;color:#fff;font-weight:600;">Sponsored • continues below</div>
-    <iframe id="vx-adframe" src="" loading="lazy"
-            style="width:100%;height:420px;border:0;display:block;background:#fff;"></iframe>
-    <div style="padding:8px 10px;background:#f7f7f7;font-size:12px;color:#666;text-align:center;">
-      If the offer doesn’t appear, <a id="vx-fallback" href="#" target="_blank" rel="nofollow sponsored noopener">open in a new tab</a>.
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Laptop Distribution</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        /* Custom CSS for a more "advanced" look and feel */
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+
+        .gradient-bg {
+            background-image: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+
+        .highlight-text {
+            animation: pulse 2s infinite cubic-bezier(0.4, 0, 0.6, 1);
+        }
+        @keyframes pulse {
+            0%, 100% {
+                transform: scale(1);
+                opacity: 1;
+            }
+            50% {
+                transform: scale(1.05);
+                opacity: 0.8;
+            }
+        }
+        
+        .slide-in-right {
+            animation: slideInRight 1s ease-out forwards;
+        }
+        @keyframes slideInRight {
+            0% {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            100% {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        .laptop-card {
+            transform-style: preserve-3d;
+            transition: transform 0.5s ease-in-out;
+            perspective: 1000px;
+        }
+
+        .rotate-y {
+            transform: rotateY(15deg);
+        }
+        
+        .quiz-option {
+            transition: transform 0.2s ease-in-out, background-color 0.2s ease-in-out;
+        }
+
+        .quiz-option:hover {
+            transform: translateY(-2px);
+        }
+
+        /* Modal styling */
+        .modal {
+            background-color: rgba(0, 0, 0, 0.7);
+        }
+    </style>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc, onSnapshot, updateDoc, increment, collection, getDocs, query, where, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Global variables provided by the Canvas environment
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = {
+            apiKey: "AIzaSyDwUaiGnlxzhzt7w3TTa_eyhlTdpO-0jqE",
+            authDomain: "watchpk-4066a.firebaseapp.com",
+            projectId: "watchpk-4066a",
+            storageBucket: "watchpk-4066a.firebasestorage.app",
+            messagingSenderId: "534369194288",
+            appId: "1:534369194288:web:ce0a98470f0e9b4ec5b8f5",
+            measurementId: "G-5P16BY9FPM"
+        };
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        
+        // --- App State & Firebase Initialization ---
+        let app, db, auth;
+        let userId = null;
+        let isAuthReady = false; // Flag to ensure Firestore calls only happen after auth is ready
+        let userToken = null; // Store the user's assigned referral token
+        let state = {
+            currentView: 'loading', // Start with a loading view
+            isDataLoading: true, // Flag for general data loading status
+            isReferralDataLoading: true, // Flag specifically for referral data
+            userProfile: {},
+            quizProgress: {
+                category: '',
+                currentQuestionIndex: 0,
+                score: 0,
+                totalQuestions: 0,
+                completed: false
+            },
+            referralCount: 0
+        };
+
+        // --- Token Generation ---
+        const generateSixLetterCode = () => {
+            const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+            let code = '';
+            for (let i = 0; i < 6; i++) {
+                code += characters.charAt(Math.floor(Math.random() * characters.length));
+            }
+            return code;
+        };
+
+        // --- Firebase Initialization ---
+        const initFirebaseAndAuth = async () => {
+            try {
+                if (Object.keys(firebaseConfig).length > 0) {
+                    app = initializeApp(firebaseConfig);
+                    db = getFirestore(app);
+                    auth = getAuth(app);
+                    
+                    // Listen for auth state changes and update the UI accordingly
+                    onAuthStateChanged(auth, async (user) => {
+                        if (user) {
+                            userId = user.uid;
+                            isAuthReady = true;
+                            console.log("Authenticated with user ID:", userId);
+                            await checkAndNavigate();
+                        } else {
+                            userId = null;
+                            isAuthReady = true;
+                            state.currentView = 'welcome';
+                            state.isDataLoading = false;
+                            renderApp();
+                        }
+                    });
+                } else {
+                    console.error("Firebase config is missing. App cannot connect to Firestore.");
+                    state.currentView = 'welcome';
+                    state.isDataLoading = false;
+                    renderApp();
+                }
+            } catch (error) {
+                console.error("Error initializing Firebase or during authentication:", error);
+                showModal("Initialization Error", "Failed to connect to the server. Please try again later.");
+                state.currentView = 'welcome';
+                state.isDataLoading = false;
+                renderApp();
+            }
+        };
+
+        // --- Firestore Helpers (FIXED PATHS) ---
+        // This function creates a document reference for private user data
+        const getPrivateDocRef = (documentName) => {
+            if (!db || !userId) return null;
+            return doc(db, 'artifacts', appId, 'users', userId, 'privateData', documentName);
+        };
+
+        // This function creates a document reference for public data shared across users
+        const getPublicDocRef = (collectionName, documentId) => {
+            if (!db) return null;
+            return doc(db, 'artifacts', appId, 'public', 'data', collectionName, documentId);
+        };
+
+        // --- Data & Constants ---
+        const HIGHLIGHT_MESSAGE = "80% marks can make you eligible for a free laptop and 15000 pkr amount!";
+        const PASSING_PERCENTAGE = 80;
+        const LAPTOP_DATA = [
+            {
+                name: "HP Laptop 15",
+                image: "https://static.webx.pk/files/78721/Images/Thumbnails-Large/hp-15-fd0499nia-intel-core-i5-78721-2407271-010825122118454.webp",
+                details: "13th Gen Core i5, 8GB RAM, 512GB SSD. Perfect for demanding tasks.",
+                scoreThreshold: 95
+            },
+            {
+                name: "Apple MacBook Air 13",
+                image: "https://img.netzwelt.de/dw1200_dh900_sw1440_sh1080_sx240_sy0_sr4x3_nu2/picture/original/2025/03/apple-neue-macbook-air-m4-chip-offiziell-vorgestellt-427667.jpeg",
+                details: "M4 Chip, 16GB RAM, 256GB SSD. Sleek and powerful for creative work.",
+                scoreThreshold: 85
+            },
+            {
+                name: "Microsoft Surface Pro 4",
+                image: "https://cc.cs.1worldsync.com/inlinecontent/mediaserver/all/532/4d9/5324d940d1cdfeab0fb4c3bfaac3e06c/original.jpg",
+                details: "Intel Core i5 4th Gen, 4GB RAM, 128GB SSD. A versatile touchscreen device.",
+                scoreThreshold: 70
+            },
+            {
+                name: "HP Chromebook G8",
+                image: "https://www.campustore.it/pub/media/catalog/product/cache/image/285x285/beff4985b56e3afdbeabfc89641a4582/3/4/348389_000.jpg",
+                details: "Intel Celeron, 4GB RAM, 32GB SSD. Lightweight and great for students.",
+                scoreThreshold: 65
+            },
+            {
+                name: "Dell Latitude 6430",
+                image: "https://5.imimg.com/data5/GO/KQ/IF/SELLER-75052912/dell-6430-1.jpg",
+                details: "Core i5 3rd Gen, 8GB RAM, 500GB HDD. A reliable and durable workhorse.",
+                scoreThreshold: 40
+            }
+        ];
+
+        const QUIZ_QUESTIONS = {
+            'IT / CS students': [
+                { question: "What is a loop in programming?", options: ["A function that returns a value", "A sequence of instructions that is repeated", "A type of data storage", "A variable declaration"], answer: "A sequence of instructions that is repeated" },
+                { question: "What does HTML stand for?", options: ["Hyper Text Markup Language", "High Tech Modern Language", "Hyperlinks and Text Markup Language", "Home Tool Markup Language"], answer: "Hyper Text Markup Language" },
+                { question: "What is the purpose of CSS?", options: ["To add interactivity to a website", "To structure the content of a webpage", "To style the appearance of a webpage", "To manage server-side logic"], answer: "To style the appearance of a webpage" }
+            ],
+            'Medical Students': [
+                { question: "What is the largest organ in the human body?", options: ["Brain", "Heart", "Skin", "Liver"], answer: "Skin" },
+                { question: "Which vitamin is produced when skin is exposed to sunlight?", options: ["Vitamin A", "Vitamin C", "Vitamin D", "Vitamin B12"], answer: "Vitamin D" },
+                { question: "What is the name of the smallest bone in the human body?", options: ["Stapes", "Femur", "Tibia", "Humerus"], answer: "Stapes" }
+            ],
+            'Engineering': [
+                { question: "What is the primary function of a transformer?", options: ["To convert AC to DC", "To change voltage levels", "To store electrical energy", "To generate power"], answer: "To change voltage levels" },
+                { question: "In thermodynamics, what does 'entropy' measure?", options: ["Temperature", "Disorder or randomness", "Pressure", "Heat flow"], answer: "Disorder or randomness" },
+                { question: "What is the main component of steel?", options: ["Aluminum", "Copper", "Iron", "Zinc"], answer: "Iron" }
+            ],
+            'Arts': [
+                { question: "Who painted the Mona Lisa?", options: ["Vincent van Gogh", "Pablo Picasso", "Leonardo da Vinci", "Claude Monet"], answer: "Leonardo da Vinci" },
+                { question: "What are the three primary colors?", options: ["Red, Blue, Green", "Red, Yellow, Blue", "Orange, Green, Purple", "Cyan, Magenta, Yellow"], answer: "Red, Yellow, Blue" },
+                { question: "Which artistic movement is characterized by a fragmented and abstract style?", options: ["Impressionism", "Renaissance", "Cubism", "Surrealism"], answer: "Cubism" }
+            ],
+            'Matric and Middle pass students': [
+                { question: "What is the capital of Pakistan?", options: ["Karachi", "Lahore", "Islamabad", "Peshawar"], answer: "Islamabad" },
+                { question: "How many planets are in our solar system?", options: ["7", "8", "9", "10"], answer: "8" },
+                { question: "Which animal is known as the 'King of the Jungle'?", options: ["Tiger", "Lion", "Elephant", "Bear"], answer: "Lion" }
+            ],
+            'IQ': [
+                { question: "What has an eye, but cannot see?", options: ["A needle", "A hurricane", "A storm", "A potato"], answer: "A needle" },
+                { question: "What is always in front of you but can’t be seen?", options: ["The future", "The past", "The present", "A secret"], answer: "The future" }
+            ]
+        };
+
+        // --- Core Application Logic ---
+        const renderApp = () => {
+            const container = document.getElementById('app-container');
+            if (!container) return;
+            
+            // Centralized loading check
+            if (state.isDataLoading) {
+                renderLoadingView(container);
+                return;
+            }
+
+            container.innerHTML = ''; // Clear container
+            
+            switch (state.currentView) {
+                case 'welcome':
+                    renderWelcomeView(container);
+                    break;
+                case 'auth':
+                    renderAuthView(container);
+                    break;
+                case 'profile':
+                    renderProfileView(container);
+                    break;
+                case 'categories':
+                    renderCategoriesView(container);
+                    break;
+                case 'quiz':
+                    renderQuizView(container);
+                    break;
+                case 'results':
+                    renderResultsView(container);
+                    break;
+                case 'delivery':
+                    renderDeliveryView(container);
+                    break;
+                case 'referral':
+                    renderReferralView(container);
+                    break;
+                default:
+                    renderWelcomeView(container);
+            }
+        };
+
+        const renderLoadingView = (container) => {
+            const viewHtml = `
+                <div class="h-screen flex items-center justify-center bg-gray-100">
+                    <div class="text-center text-indigo-600 font-semibold text-lg">
+                        <svg class="animate-spin h-10 w-10 text-indigo-600 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        <p class="mt-4">Loading...</p>
+                    </div>
+                </div>
+            `;
+            container.innerHTML = viewHtml;
+        };
+
+        const showModal = (title, content) => {
+            const modalHtml = `
+                <div id="app-modal" class="modal fixed inset-0 z-50 flex items-center justify-center p-4">
+                    <div class="bg-white rounded-xl shadow-2xl p-6 md:p-8 max-w-lg w-full transform scale-95 transition-transform">
+                        <h3 class="text-xl md:text-2xl font-bold text-indigo-800 mb-4">${title}</h3>
+                        <p class="text-gray-700 mb-6">${content}</p>
+                        <button onclick="document.getElementById('app-modal').remove()" class="w-full bg-indigo-600 text-white py-2 px-4 rounded-md hover:bg-indigo-700 transition">Close</button>
+                    </div>
+                </div>
+            `;
+            document.body.insertAdjacentHTML('beforeend', modalHtml);
+        };
+
+        // --- View Rendering Functions ---
+        const renderWelcomeView = (container) => {
+            const viewHtml = `
+                <div class="h-screen flex items-center justify-center gradient-bg">
+                    <div class="max-w-4xl mx-auto text-center p-6 md:p-10">
+                        <div class="bg-white rounded-xl shadow-lg p-6 md:p-10 border-t-8 border-indigo-600">
+                            <h1 class="text-3xl md:text-5xl font-extrabold text-indigo-800 leading-tight">
+                                Free Laptop Distribution Program
+                            </h1>
+                            <p class="text-gray-600 mt-4 text-lg">
+                                We are launching a free laptop distribution for Pakistani students.
+                            </p>
+                            <p class="text-indigo-600 text-xl md:text-2xl mt-4 font-bold highlight-text">
+                                **${HIGHLIGHT_MESSAGE}**
+                            </p>
+                            <div id="laptop-carousel" class="flex justify-center items-center my-8 overflow-hidden">
+                                <!-- Laptop images will be inserted here dynamically -->
+                            </div>
+                            <button id="get-started-btn" class="mt-8 bg-indigo-600 text-white py-3 px-8 rounded-full shadow-lg hover:bg-indigo-700 transition transform hover:scale-105">
+                                Get Started
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            container.innerHTML = viewHtml;
+            document.getElementById('get-started-btn').addEventListener('click', () => {
+                state.currentView = 'auth';
+                state.isDataLoading = false;
+                renderApp();
+            });
+
+            // Animate laptop images
+            const carousel = document.getElementById('laptop-carousel');
+            LAPTOP_DATA.forEach((laptop, index) => {
+                const img = document.createElement('img');
+                img.src = laptop.image;
+                img.alt = laptop.name;
+                img.className = `h-24 md:h-32 mx-4 rounded-lg shadow-md slide-in-right laptop-card`;
+                img.style.animationDelay = `${index * 0.2}s`;
+                carousel.appendChild(img);
+            });
+        };
+
+        const checkAndNavigate = async () => {
+            // Wait for authentication to complete before performing Firestore operations.
+            if (!isAuthReady) {
+                state.isDataLoading = true;
+                renderApp();
+                return;
+            }
+
+            if (!userId) {
+                state.currentView = 'auth';
+                state.isDataLoading = false;
+                renderApp();
+                return;
+            }
+
+            state.isDataLoading = true;
+            renderApp();
+
+            const profileDocRef = getPrivateDocRef('profileData');
+            const docSnap = await getDoc(profileDocRef);
+
+            state.isDataLoading = false;
+
+            if (docSnap.exists()) {
+                state.userProfile = docSnap.data();
+                const quizDocRef = getPrivateDocRef('quizData');
+                const quizSnap = await getDoc(quizDocRef);
+                if (quizSnap.exists() && quizSnap.data().completed) {
+                    state.currentView = 'referral';
+                } else {
+                    state.currentView = 'categories';
+                }
+            } else {
+                state.currentView = 'profile';
+            }
+            renderApp();
+        };
+
+        const renderAuthView = (container) => {
+            const viewHtml = `
+                <div class="h-screen flex items-center justify-center bg-gray-100">
+                    <div class="max-w-md mx-auto bg-white rounded-xl shadow-lg p-8 border-t-8 border-indigo-600">
+                        <h2 class="text-2xl md:text-3xl font-bold text-indigo-800 mb-6 text-center">Create or Log In</h2>
+                        <form id="auth-form" class="space-y-4">
+                            <div>
+                                <label for="email" class="block text-sm font-medium text-gray-700">Email Address</label>
+                                <input type="email" id="email" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2" required>
+                            </div>
+                            <div>
+                                <label for="password" class="block text-sm font-medium text-gray-700">Password</label>
+                                <input type="password" id="password" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2" required>
+                            </div>
+                            <div>
+                                <label for="referral-token" class="block text-sm font-medium text-gray-700">Referral Token (Optional)</label>
+                                <input type="text" id="referral-token" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 uppercase" placeholder="e.g., QWERTY">
+                            </div>
+                            <div id="auth-message-box" class="hidden text-center text-sm p-2 rounded-md"></div>
+                            <button type="submit" id="signup-btn" class="w-full bg-indigo-600 text-white py-2 px-4 rounded-md shadow-lg hover:bg-indigo-700 transition">Create Account</button>
+                            <button type="button" id="login-btn" class="w-full text-indigo-600 py-2 px-4 rounded-md hover:bg-indigo-50 transition">Log In</button>
+                        </form>
+                    </div>
+                </div>
+            `;
+            container.innerHTML = viewHtml;
+            const authForm = document.getElementById('auth-form');
+            const emailInput = document.getElementById('email');
+            const passwordInput = document.getElementById('password');
+            const referralTokenInput = document.getElementById('referral-token');
+            const messageBox = document.getElementById('auth-message-box');
+            
+            // Event listener for creating a new user account
+            document.getElementById('signup-btn').addEventListener('click', async (e) => {
+                e.preventDefault();
+                messageBox.className = "block bg-blue-100 text-blue-700 text-center text-sm p-2 rounded-md";
+                messageBox.textContent = "Creating account...";
+                try {
+                    // Try to find an unassigned token. If none, generate a new one.
+                    let newUserToken = null;
+                    const unassignedTokenQuery = query(collection(db, 'artifacts', appId, 'public', 'data', 'tokens'), where('isAssigned', '==', false));
+                    const unassignedTokenSnapshot = await getDocs(unassignedTokenQuery);
+
+                    if (!unassignedTokenSnapshot.empty) {
+                        newUserToken = unassignedTokenSnapshot.docs[0].id;
+                    } else {
+                        // Generate a new unique token if none are available
+                        let isUnique = false;
+                        while(!isUnique) {
+                            const tempToken = generateSixLetterCode();
+                            const tokenDocRef = getPublicDocRef('tokens', tempToken);
+                            const tokenSnap = await getDoc(tokenDocRef);
+                            if (!tokenSnap.exists()) {
+                                newUserToken = tempToken;
+                                isUnique = true;
+                            }
+                        }
+                    }
+                    
+                    const userCredential = await createUserWithEmailAndPassword(auth, emailInput.value, passwordInput.value);
+                    const referralToken = referralTokenInput.value.toUpperCase();
+                    userId = userCredential.user.uid;
+
+                    // Create a Firestore batch to perform all updates atomically
+                    const batch = writeBatch(db);
+
+                    // Update the new user's profile with their assigned token
+                    const profileDocRef = getPrivateDocRef('profileData');
+                    batch.set(profileDocRef, { email: emailInput.value, userId: userId, token: newUserToken }, { merge: true });
+
+                    // Mark the new token as assigned
+                    const newUserTokenDocRef = getPublicDocRef('tokens', newUserToken);
+                    batch.set(newUserTokenDocRef, { isAssigned: true, assignedToUserId: userId, referralCount: 0 });
+
+                    // If a referral token was provided, increment the inviter's referral count
+                    if (referralToken) {
+                        const inviterTokenDocRef = getPublicDocRef('tokens', referralToken);
+                        const inviterTokenSnap = await getDoc(inviterTokenDocRef);
+                        if (inviterTokenSnap.exists() && inviterTokenSnap.data().isAssigned) {
+                            batch.update(inviterTokenDocRef, { referralCount: increment(1) });
+                        } else {
+                            console.warn(`Invalid or unassigned referral token: ${referralToken}`);
+                        }
+                    }
+                    await batch.commit();
+
+                    messageBox.className = "block bg-green-100 text-green-700 text-center text-sm p-2 rounded-md";
+                    messageBox.textContent = "Account created successfully! Redirecting...";
+                    setTimeout(() => checkAndNavigate(), 1000);
+                } catch (error) {
+                    console.error("Auth error:", error);
+                    messageBox.className = "block bg-red-100 text-red-700 text-center text-sm p-2 rounded-md";
+                    messageBox.textContent = "Failed to create account: " + error.message;
+                }
+            });
+
+            // Event listener for logging in
+            document.getElementById('login-btn').addEventListener('click', async (e) => {
+                 e.preventDefault();
+                 messageBox.className = "block bg-blue-100 text-blue-700 text-center text-sm p-2 rounded-md";
+                 messageBox.textContent = "Logging in...";
+                 try {
+                     await signInWithEmailAndPassword(auth, emailInput.value, passwordInput.value);
+                     messageBox.className = "block bg-green-100 text-green-700 text-center text-sm p-2 rounded-md";
+                     messageBox.textContent = "Logged in successfully! Redirecting...";
+                     setTimeout(() => checkAndNavigate(), 1000);
+                 } catch (error) {
+                     console.error("Login error:", error);
+                     messageBox.className = "block bg-red-100 text-red-700 text-center text-sm p-2 rounded-md";
+                     messageBox.textContent = "Login failed: " + error.message;
+                 }
+            });
+        };
+
+        const renderProfileView = (container) => {
+            const viewHtml = `
+                <div class="min-h-screen flex items-center justify-center bg-gray-100 p-4">
+                    <div class="max-w-xl mx-auto bg-white rounded-xl shadow-lg p-6 md:p-10 border-t-8 border-indigo-600 w-full">
+                        <header class="text-center mb-8">
+                            <h1 class="text-3xl md:text-4xl font-bold text-indigo-800">Your Profile</h1>
+                            <p class="text-gray-600 mt-2">Please enter your details to proceed to the quiz.</p>
+                        </header>
+                        <form id="profile-form" class="space-y-6">
+                            <div>
+                                <label for="name-input" class="block text-sm font-medium text-gray-700">Full Name</label>
+                                <input type="text" id="name-input" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2" required>
+                            </div>
+                            <div>
+                                <label for="role-select" class="block text-sm font-medium text-gray-700">Role</label>
+                                <select id="role-select" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2" required>
+                                    <option value="IT / CS students">IT / CS Students</option>
+                                    <option value="Medical Students">Medical Students</option>
+                                    <option value="Engineering">Engineering</option>
+                                    <option value="Arts">Arts</option>
+                                    <option value="Matric and Middle pass students">Matric and Middle Pass Students</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label for="contact-input" class="block text-sm font-medium text-gray-700">Contact Number</label>
+                                <input type="tel" id="contact-input" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2" required>
+                            </div>
+                            <div id="profile-message-box" class="hidden text-center text-sm p-2 rounded-md"></div>
+                            <button type="submit" class="w-full bg-indigo-600 text-white py-2 px-4 rounded-md shadow-lg hover:bg-indigo-700 transition">Save & Continue</button>
+                        </form>
+                    </div>
+                </div>
+            `;
+            container.innerHTML = viewHtml;
+            const profileForm = document.getElementById('profile-form');
+            profileForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                // Ensure auth is ready before saving
+                if (!isAuthReady) {
+                    showModal("Please Wait", "Authentication is still loading. Please try again in a moment.");
+                    return;
+                }
+
+                const name = document.getElementById('name-input').value;
+                const role = document.getElementById('role-select').value;
+                const contact = document.getElementById('contact-input').value;
+
+                try {
+                    const profileDocRef = getPrivateDocRef('profileData');
+                    await setDoc(profileDocRef, { name, role, contact }, { merge: true });
+                    state.userProfile = { ...state.userProfile, name, role, contact };
+                    state.currentView = 'categories';
+                    state.isDataLoading = false;
+                    renderApp();
+                } catch (error) {
+                    console.error("Error saving profile:", error);
+                    showModal('Error', 'Failed to save profile. Please try again.');
+                }
+            });
+        };
+        
+        const renderCategoriesView = (container) => {
+            const categories = Object.keys(QUIZ_QUESTIONS).filter(cat => cat !== 'IQ'); // Filter out IQ
+            const viewHtml = `
+                <div class="min-h-screen flex items-center justify-center bg-gray-100 p-4">
+                    <div class="max-w-xl mx-auto bg-white rounded-xl shadow-lg p-6 md:p-10 border-t-8 border-indigo-600 w-full">
+                        <h2 class="text-2xl md:text-3xl font-bold text-indigo-800 mb-6 text-center">Select Your Category</h2>
+                        <p class="text-gray-600 mb-8 text-center">This will determine the questions in your quiz.</p>
+                        <div class="space-y-4">
+                            ${categories.map(cat => `
+                                <button data-category="${cat}" class="category-btn w-full text-left py-4 px-6 rounded-lg shadow-md hover:bg-indigo-100 transition duration-300 ease-in-out">
+                                    <span class="text-lg font-semibold text-indigo-800">${cat}</span>
+                                </button>
+                            `).join('')}
+                        </div>
+                    </div>
+                </div>
+            `;
+            container.innerHTML = viewHtml;
+            document.querySelectorAll('.category-btn').forEach(button => {
+                button.addEventListener('click', (e) => {
+                    const category = e.currentTarget.dataset.category;
+                    state.quizProgress.category = category;
+                    state.quizProgress.currentQuestionIndex = 0;
+                    state.quizProgress.score = 0;
+                    state.quizProgress.totalQuestions = QUIZ_QUESTIONS[category].length + QUIZ_QUESTIONS['IQ'].length;
+                    state.currentView = 'quiz';
+                    renderApp();
+                });
+            });
+        };
+
+        const renderQuizView = (container) => {
+            const { category, currentQuestionIndex, score, totalQuestions } = state.quizProgress;
+            const allQuestions = [...QUIZ_QUESTIONS[category], ...QUIZ_QUESTIONS['IQ']];
+            const currentQuestion = allQuestions[currentQuestionIndex];
+            
+            if (!currentQuestion) {
+                state.quizProgress.completed = true;
+                state.currentView = 'results';
+                saveQuizResult(); // Save result to Firestore
+                renderApp();
+                return;
+            }
+
+            const currentPercentage = totalQuestions > 0 ? ((score / totalQuestions) * 100).toFixed(0) : 0;
+            
+            const viewHtml = `
+                <div class="min-h-screen flex items-center justify-center bg-gray-100 p-4">
+                    <div class="max-w-xl mx-auto bg-white rounded-xl shadow-lg p-6 md:p-10 border-t-8 border-indigo-600 w-full">
+                        <header class="text-center mb-8">
+                            <h2 class="text-2xl md:text-3xl font-bold text-indigo-800">Quiz</h2>
+                            <p class="text-gray-600 mt-2">Live Progress: <span class="text-indigo-600 font-bold">${currentPercentage}%</span></p>
+                        </header>
+                        <div class="space-y-6">
+                            <div class="bg-indigo-50 rounded-lg p-6 text-center shadow-inner">
+                                <h3 class="text-xl font-semibold text-gray-800">${currentQuestion.question}</h3>
+                            </div>
+                            <div class="space-y-3">
+                                ${currentQuestion.options.map(option => `
+                                    <button data-answer="${option}" class="quiz-option w-full text-left py-3 px-6 rounded-full border border-gray-300 bg-white text-gray-700 hover:bg-indigo-50 hover:border-indigo-500 hover:text-indigo-800">
+                                        ${option}
+                                    </button>
+                                `).join('')}
+                            </div>
+                        </div>
+                        <p class="text-center text-sm text-gray-500 mt-6">Question ${currentQuestionIndex + 1} of ${totalQuestions}</p>
+                    </div>
+                </div>
+            `;
+            container.innerHTML = viewHtml;
+
+            document.querySelectorAll('.quiz-option').forEach(button => {
+                button.addEventListener('click', (e) => {
+                    const selectedAnswer = e.target.dataset.answer;
+                    if (selectedAnswer === currentQuestion.answer) {
+                        state.quizProgress.score++;
+                    }
+                    state.quizProgress.currentQuestionIndex++;
+                    renderApp();
+                });
+            });
+        };
+
+        const saveQuizResult = async () => {
+             // Ensure auth is ready before saving
+            if (!isAuthReady) return;
+
+            const quizDocRef = getPrivateDocRef('quizData');
+            const { score, totalQuestions, category } = state.quizProgress;
+            const percentage = (score / totalQuestions) * 100;
+            try {
+                await setDoc(quizDocRef, {
+                    score,
+                    totalQuestions,
+                    percentage,
+                    category,
+                    completed: true,
+                    timestamp: new Date().toISOString()
+                });
+            } catch (error) {
+                console.error("Error saving quiz result:", error);
+            }
+        };
+
+        const getEligibleLaptop = (percentage) => {
+            const sortedLaptops = [...LAPTOP_DATA].sort((a, b) => b.scoreThreshold - a.scoreThreshold);
+            for (const laptop of sortedLaptops) {
+                if (percentage >= laptop.scoreThreshold) {
+                    return laptop;
+                }
+            }
+            return null;
+        };
+
+        const renderResultsView = (container) => {
+            const quizData = state.quizProgress;
+            const percentage = (quizData.score / quizData.totalQuestions) * 100;
+            const passed = percentage >= PASSING_PERCENTAGE;
+            const eligibleLaptop = getEligibleLaptop(percentage);
+            
+            let resultHtml;
+            if (passed) {
+                resultHtml = `
+                    <div class="text-center">
+                        <h2 class="text-4xl font-extrabold text-green-600 animate-pulse">Congratulations!</h2>
+                        <p class="text-lg text-gray-700 mt-4">You have successfully passed the quiz with a score of ${percentage.toFixed(0)}%.</p>
+                        ${eligibleLaptop ? `
+                            <p class="text-xl text-indigo-700 font-bold mt-4">You are eligible for the ${eligibleLaptop.name}!</p>
+                            <div class="mt-8 flex flex-col items-center">
+                                <img src="${eligibleLaptop.image}" alt="${eligibleLaptop.name}" class="h-48 rounded-lg shadow-lg laptop-card rotate-y">
+                                <p class="text-sm text-gray-500 mt-2">${eligibleLaptop.details}</p>
+                            </div>
+                            <button id="delivery-btn" class="mt-8 bg-green-600 text-white py-3 px-8 rounded-full shadow-lg hover:bg-green-700 transition transform hover:scale-105">
+                                Enter Delivery Details
+                            </button>
+                        ` : `
+                            <p class="text-xl text-indigo-700 font-bold mt-4">You are eligible for a cash prize of 15000 PKR!</p>
+                            <button id="delivery-btn" class="mt-8 bg-green-600 text-white py-3 px-8 rounded-full shadow-lg hover:bg-green-700 transition transform hover:scale-105">
+                                Enter Delivery Details
+                            </button>
+                        `}
+                    </div>
+                `;
+            } else {
+                resultHtml = `
+                    <div class="text-center">
+                        <h2 class="text-4xl font-extrabold text-red-600">Unlucky!</h2>
+                        <p class="text-lg text-gray-700 mt-4">Your score was ${percentage.toFixed(0)}%. You need 80% to be eligible.</p>
+                        <p class="text-xl text-gray-800 font-bold mt-4">Keep trying! You can do it.</p>
+                        <button id="try-again-btn" class="mt-8 bg-indigo-600 text-white py-3 px-8 rounded-full shadow-lg hover:bg-indigo-700 transition transform hover:scale-105">
+                            Try Again
+                        </button>
+                    </div>
+                `;
+            }
+
+            const viewHtml = `
+                <div class="min-h-screen flex items-center justify-center bg-gray-100 p-4">
+                    <div class="max-w-xl mx-auto bg-white rounded-xl shadow-lg p-6 md:p-10 border-t-8 border-indigo-600 w-full">
+                        ${resultHtml}
+                    </div>
+                </div>
+            `;
+            container.innerHTML = viewHtml;
+
+            if (passed) {
+                document.getElementById('delivery-btn').addEventListener('click', () => {
+                    state.currentView = 'delivery';
+                    renderApp();
+                });
+            } else {
+                document.getElementById('try-again-btn').addEventListener('click', () => {
+                    state.currentView = 'categories';
+                    renderApp();
+                });
+            }
+        };
+
+        const renderDeliveryView = (container) => {
+             const viewHtml = `
+                <div class="min-h-screen flex items-center justify-center bg-gray-100 p-4">
+                    <div class="max-w-xl mx-auto bg-white rounded-xl shadow-lg p-6 md:p-10 border-t-8 border-indigo-600 w-full">
+                        <h2 class="text-2xl md:text-3xl font-bold text-indigo-800 mb-6 text-center">Delivery Details</h2>
+                        <p class="text-gray-600 mb-6 text-center">Please enter your address for delivery.</p>
+                        <form id="delivery-form" class="space-y-4">
+                            <div>
+                                <label for="country-input" class="block text-sm font-medium text-gray-700">Country</label>
+                                <input type="text" id="country-input" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2" required>
+                            </div>
+                            <div>
+                                <label for="province-input" class="block text-sm font-medium text-gray-700">Province</label>
+                                <input type="text" id="province-input" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2" required>
+                            </div>
+                            <div>
+                                <label for="city-input" class="block text-sm font-medium text-gray-700">City</label>
+                                <input type="text" id="city-input" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2" required>
+                            </div>
+                            <div>
+                                <label for="address-input" class="block text-sm font-medium text-gray-700">Home Address</label>
+                                <textarea id="address-input" rows="3" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2" required></textarea>
+                            </div>
+                            <div>
+                                <label for="phone-input" class="block text-sm font-medium text-gray-700">Phone Number</label>
+                                <input type="tel" id="phone-input" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2" required>
+                            </div>
+                             <div id="delivery-message-box" class="hidden text-center text-sm p-2 rounded-md"></div>
+                            <button type="submit" class="w-full bg-indigo-600 text-white py-2 px-4 rounded-md shadow-lg hover:bg-indigo-700 transition">Submit Details</button>
+                        </form>
+                    </div>
+                </div>
+            `;
+            container.innerHTML = viewHtml;
+            document.getElementById('delivery-form').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                // Ensure auth is ready before saving
+                if (!isAuthReady) {
+                    showModal("Please Wait", "Authentication is still loading. Please try again in a moment.");
+                    return;
+                }
+
+                const country = document.getElementById('country-input').value;
+                const province = document.getElementById('province-input').value;
+                const city = document.getElementById('city-input').value;
+                const address = document.getElementById('address-input').value;
+                const phone = document.getElementById('phone-input').value;
+                
+                try {
+                    const deliveryDocRef = getPrivateDocRef('deliveryData');
+                    await setDoc(deliveryDocRef, {
+                        country,
+                        province,
+                        city,
+                        address,
+                        phone,
+                        userId: userId,
+                        timestamp: new Date().toISOString()
+                    });
+                    state.currentView = 'referral';
+                    state.isDataLoading = false;
+                    renderApp();
+                } catch (error) {
+                    console.error("Error saving delivery data:", error);
+                    showModal('Error', 'Failed to save delivery details. Please try again.');
+                }
+            });
+        };
+
+        const renderReferralView = (container) => {
+            const viewHtml = `
+                <div class="min-h-screen flex items-center justify-center bg-gray-100 p-4">
+                    <div class="max-w-xl mx-auto bg-white rounded-xl shadow-lg p-6 md:p-10 border-t-8 border-indigo-600 w-full">
+                        <h2 class="text-2xl md:text-3xl font-bold text-indigo-800 mb-6 text-center">Share & Invite</h2>
+                        <p class="text-gray-600 text-center mb-6">
+                            You're almost there! To finalize your delivery, please share your unique token below and invite at least 7 students.
+                        </p>
+                        
+                        <div class="bg-indigo-50 rounded-lg p-4 text-center">
+                            <p class="font-bold text-indigo-800 mb-2">Your Unique Token:</p>
+                            <p class="text-3xl md:text-4xl font-extrabold text-indigo-600 tracking-widest break-all" id="user-token-display">...</p>
+                            <p class="font-bold text-indigo-800 mt-4 mb-2">Your Referral Count:</p>
+                            <div class="text-4xl font-extrabold text-indigo-600" id="referral-count">...</div>
+                        </div>
+
+                        <div class="mt-6 space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Share your token with friends:</label>
+                                <div class="flex mt-1">
+                                    <input type="text" id="referral-token-input" class="block w-full rounded-md border-gray-300 shadow-sm p-2 bg-gray-50 text-gray-600 text-center font-mono" readonly>
+                                    <button id="copy-btn" class="ml-2 py-2 px-4 bg-gray-200 rounded-md text-gray-700 hover:bg-gray-300 transition">Copy</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            container.innerHTML = viewHtml;
+            
+            const tokenDisplayEl = document.getElementById('user-token-display');
+            const tokenInputEl = document.getElementById('referral-token-input');
+            const referralCountEl = document.getElementById('referral-count');
+
+            // Fetch the user's token and set up a real-time listener for the referral count
+            const profileDocRef = getPrivateDocRef('profileData');
+            onSnapshot(profileDocRef, (profileSnap) => {
+                if (profileSnap.exists()) {
+                    const data = profileSnap.data();
+                    userToken = data.token;
+                    tokenDisplayEl.textContent = userToken;
+                    tokenInputEl.value = userToken;
+
+                    // Now that we have the token, listen to the public token document
+                    const referralRef = getPublicDocRef('tokens', userToken);
+                    onSnapshot(referralRef, (docSnap) => {
+                        if (docSnap.exists()) {
+                            const referralData = docSnap.data();
+                            const count = referralData.referralCount || 0;
+                            referralCountEl.textContent = count;
+                            if (count >= 7) {
+                                showModal('Success!', 'Congratulations! Your laptop is now on its way!');
+                            }
+                        } else {
+                            referralCountEl.textContent = '0';
+                        }
+                    });
+
+                } else {
+                    tokenDisplayEl.textContent = 'Token Not Found';
+                    tokenInputEl.value = 'Token Not Found';
+                    referralCountEl.textContent = '...';
+                }
+            });
+
+            document.getElementById('copy-btn').addEventListener('click', () => {
+                const tokenInput = document.getElementById('referral-token-input');
+                tokenInput.select();
+                document.execCommand('copy');
+                showModal('Copied!', 'Your token has been copied to your clipboard!');
+            });
+        };
+
+        window.onload = () => {
+            initFirebaseAndAuth();
+            renderApp();
+        };
+    </script>
+</head>
+<body class="bg-gray-100 font-sans">
+    <div id="app-container">
+        <!-- Application views will be rendered here by JavaScript -->
     </div>
-  </div>
-
-  <p style="text-align:center;font-size:12px;color:#888;margin-top:8px;">
-    Disclosure: Playing the video also loads a sponsored offer on this page.
-  </p>
-</div>
-
-<script>
-(function(){
-  // --- CONFIG ---
-  const AD_URL = "https://www.profitableratecpm.com/v30v9iyyx?key=d7ca0b45aee9f9b8402f8dce202ab1ff";
-  const ALSO_OPEN_NEW_TAB = true; // set to false if you only want the inline ad below the video
-
-  // --- ELEMENTS ---
-  const v   = document.getElementById('vx-video');
-  const ad  = document.getElementById('vx-adslot');
-  const fra = document.getElementById('vx-adframe');
-  const fb  = document.getElementById('vx-fallback');
-
-  let fired = false;
-  function startCombo(){
-    if (fired) return;
-    fired = true;
-
-    // Play video
-    try { v.play().catch(()=>{}); } catch(_){}
-
-    // Show inline ad frame
-    ad.style.display = 'block';
-    fra.src = AD_URL;
-
-    // Also open offer in a new tab (helps if the offer blocks iframes)
-    if (ALSO_OPEN_NEW_TAB) {
-      const w = window.open(AD_URL, '_blank', 'noopener');
-      // if popup blocked, user can click the fallback link
-    }
-  }
-
-  // Trigger when user clicks the video surface or hits play
-  v.addEventListener('click', startCombo, {passive:true});
-  v.addEventListener('play',  startCombo, {once:true});
-
-  // Fallback open
-  fb.addEventListener('click', function(e){
-    e.preventDefault();
-    const w = window.open(AD_URL, '_blank', 'noopener');
-    if (!w) location.href = AD_URL;
-  });
-})();
-</script>
+</body>
+</html>
